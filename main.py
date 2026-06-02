@@ -109,12 +109,54 @@ async def monitor_positions(app: Application) -> None:
                 t["sl_price"] = new_sl
                 if sl_improved:
                     arrow = "📈" if t["direction"] == "LONG" else "📉"
-                    await send_text(
-                        app,
-                        f"{arrow} *Trailing SL aggiornato*\n"
-                        f"{t['symbol']} {t['direction']}\n"
+
+                    def _guaranteed(trade):
+                        sl = trade["sl_price"]
+                        ep = trade["entry_price"]
+                        qty = trade["qty"]
+                        if sl is None:
+                            return 0.0
+                        if trade["direction"] == "LONG":
+                            return (sl - ep) * qty
+                        return (ep - sl) * qty
+
+                    def _pct(trade):
+                        ep = trade["entry_price"]
+                        qty = trade["qty"]
+                        invested = ep * qty
+                        if invested == 0:
+                            return 0.0
+                        return _guaranteed(trade) / invested * 100
+
+                    this_profit = _guaranteed(t)
+                    this_pct = _pct(t)
+                    profit_sign = "+" if this_profit >= 0 else ""
+
+                    lines = [
+                        f"{arrow} *Trailing SL aggiornato*",
+                        f"{t['symbol']} {t['direction']}",
                         f"  Nuovo SL: `{new_sl:.4f}`  (peak: `{new_peak:.4f}`)",
-                    )
+                        f"  Profitto garantito: `{profit_sign}{this_profit:.2f} USDC` ({profit_sign}{this_pct:.2f}%)",
+                        "",
+                        "*Riepilogo posizioni aperte (SL attuali):*",
+                    ]
+                    total_guaranteed = 0.0
+                    for pos in open_trades:
+                        pos_sl = pos["sl_price"]
+                        if pos_sl is None:
+                            continue
+                        g = _guaranteed(pos)
+                        p = _pct(pos)
+                        total_guaranteed += g
+                        g_sign = "+" if g >= 0 else ""
+                        lines.append(
+                            f"  • {pos['symbol']} {pos['direction']}  SL `{pos_sl:.4f}`"
+                            f"  →  `{g_sign}{g:.2f} USDC` ({g_sign}{p:.2f}%)"
+                        )
+                    t_sign = "+" if total_guaranteed >= 0 else ""
+                    lines.append(f"\n*Totale garantito: `{t_sign}{total_guaranteed:.2f} USDC`*")
+
+                    await send_text(app, "\n".join(lines))
 
         sl, tp = t["sl_price"], t["tp_price"]
         if sl is None or tp is None:
