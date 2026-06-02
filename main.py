@@ -12,7 +12,7 @@ from config import (SYMBOLS_TO_SCAN, SCAN_INTERVAL_SEC, MONITOR_INTERVAL_SEC,
                     TIMEFRAME, CANDLES_LIMIT, BENCHMARK_SYMBOL,
                     INITIAL_CAPITAL, ENABLE_SL_TP, MAX_OPEN_TRADES,
                     POSITIONS_REPORT_INTERVAL_SEC, AUTO_TRADE,
-                    ENABLE_TRAILING_STOP, TRAILING_STOP_PCT)
+                    ENABLE_TRAILING_STOP, TRAILING_STOP_PCT, TRAILING_ACTIVATION_PCT)
 from analyzer import fetch_all_symbols, fetch_ticker_price
 from strategy import analyze
 from telegram_bot import build_app, send_signal, send_text, execute_auto_trade
@@ -91,18 +91,33 @@ async def monitor_positions(app: Application) -> None:
 
         if ENABLE_TRAILING_STOP:
             peak = t.get("peak_price") or t["entry_price"]
+            entry = t["entry_price"]
             if t["direction"] == "LONG":
-                new_peak = max(peak, price)
-                new_trail_sl = new_peak * (1 - TRAILING_STOP_PCT / 100)
-                current_sl = t["sl_price"] or 0.0
-                new_sl = max(new_trail_sl, current_sl)
-                sl_improved = new_sl > current_sl
+                activation_price = entry * (1 + TRAILING_ACTIVATION_PCT / 100)
+                trailing_active = price >= activation_price
+                if trailing_active:
+                    new_peak = max(peak, price)
+                    new_trail_sl = new_peak * (1 - TRAILING_STOP_PCT / 100)
+                    current_sl = t["sl_price"] or 0.0
+                    new_sl = max(new_trail_sl, current_sl)
+                    sl_improved = new_sl > current_sl
+                else:
+                    new_peak = peak
+                    new_sl = t["sl_price"] or 0.0
+                    sl_improved = False
             else:  # SHORT
-                new_peak = min(peak, price)
-                new_trail_sl = new_peak * (1 + TRAILING_STOP_PCT / 100)
-                current_sl = t["sl_price"] or float("inf")
-                new_sl = min(new_trail_sl, current_sl)
-                sl_improved = t["sl_price"] is None or new_sl < t["sl_price"]
+                activation_price = entry * (1 - TRAILING_ACTIVATION_PCT / 100)
+                trailing_active = price <= activation_price
+                if trailing_active:
+                    new_peak = min(peak, price)
+                    new_trail_sl = new_peak * (1 + TRAILING_STOP_PCT / 100)
+                    current_sl = t["sl_price"] or float("inf")
+                    new_sl = min(new_trail_sl, current_sl)
+                    sl_improved = t["sl_price"] is None or new_sl < t["sl_price"]
+                else:
+                    new_peak = peak
+                    new_sl = t["sl_price"] or float("inf")
+                    sl_improved = False
 
             if new_peak != peak or sl_improved:
                 await update_trailing_sl(t["id"], new_sl, new_peak)
