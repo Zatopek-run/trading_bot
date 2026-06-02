@@ -141,7 +141,10 @@ async def monitor_positions(app: Application) -> None:
                         "*Riepilogo posizioni aperte (SL attuali):*",
                     ]
                     total_guaranteed = 0.0
-                    for pos in open_trades:
+                    fresh_trades = await get_open_trades()
+                    for pos in fresh_trades:
+                        if pos["id"] == t["id"]:
+                            pos = dict(pos, sl_price=new_sl)
                         pos_sl = pos["sl_price"]
                         if pos_sl is None:
                             continue
