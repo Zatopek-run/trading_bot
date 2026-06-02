@@ -22,7 +22,6 @@ from database import (init_db, record_equity, realized_pnl,
                       get_trades, update_trailing_sl)
 
 logging.basicConfig(
-    logging.getLogger("httpx").setLevel(logging.WARNING)	
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     handlers=[
@@ -30,6 +29,7 @@ logging.basicConfig(
         logging.FileHandler("trading_bot.log", encoding="utf-8"),
     ],
 )
+logging.getLogger("httpx").setLevel(logging.WARNING)
 log = logging.getLogger(__name__)
 
 
