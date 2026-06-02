@@ -1,0 +1,10 @@
+.env
+*.log
+data/
+__pycache__/
+*.pyc
+.git/
+.venv/
+venv/
+caddy_data/
+caddy_config/

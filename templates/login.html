@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login — AI Trading Bot</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="login-body">
+  <form class="login-card" method="post" action="/login">
+    <div class="login-logo">🤖</div>
+    <h1>AI Trading Bot</h1>
+    <p class="muted">Accedi alla dashboard</p>
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+    <input type="text" name="username" placeholder="Username" autocomplete="username" required>
+    <input type="password" name="password" placeholder="Password" autocomplete="current-password" required>
+    <button type="submit">Accedi</button>
+  </form>
+</body>
+</html>

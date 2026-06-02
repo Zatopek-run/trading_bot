@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Trading Bot</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <div class="container">
+
+    <!-- Header -->
+    <div class="card header-card">
+      <div class="header-left">
+        <div class="header-logo">🤖</div>
+        <div>
+          <h1>AI Trading Bot</h1>
+          <p class="muted" id="experiment-sub">Esperimento — caricamento…</p>
+        </div>
+      </div>
+      <div class="header-right">
+        <span class="badge" id="status-badge">IN CORSO</span>
+        <span class="muted" id="experiment-dates"></span>
+        <a class="logout" href="/logout">Esci</a>
+      </div>
+    </div>
+
+    <!-- Top stat cards -->
+    <div class="stats-grid">
+      <div class="card stat">
+        <div class="stat-label">CAPITALE INIZIALE</div>
+        <div class="stat-value" id="initial">—</div>
+      </div>
+      <div class="card stat highlight">
+        <div class="stat-label">CAPITALE FINALE</div>
+        <div class="stat-value" id="final">—</div>
+        <div class="stat-sub" id="final-pct">—</div>
+      </div>
+      <div class="card stat">
+        <div class="stat-label">OBIETTIVO</div>
+        <div class="stat-value muted-value" id="goal">—</div>
+        <div class="stat-sub" id="goal-status">—</div>
+      </div>
+      <div class="card stat">
+        <div class="stat-label">BTC BUY &amp; HOLD</div>
+        <div class="stat-value" id="btc-bh">—</div>
+        <div class="stat-sub" id="btc-bh-pct">—</div>
+      </div>
+    </div>
+
+    <!-- Equity curve -->
+    <div class="card">
+      <h2>📈 Equity Curve</h2>
+      <div class="legend">
+        <span class="legend-item"><span class="dot dot-portfolio"></span>Portfolio AI Trading</span>
+        <span class="legend-item"><span class="dot dot-btc"></span>BTC Buy &amp; Hold</span>
+      </div>
+      <canvas id="equityChart" height="90"></canvas>
+    </div>
+
+    <!-- Metrics row -->
+    <div class="metrics-grid">
+      <div class="card metric"><div class="metric-icon">🔄</div><div class="metric-value" id="m-trades">0</div><div class="metric-label">OPERAZIONI</div></div>
+      <div class="card metric"><div class="metric-icon">✅</div><div class="metric-value win" id="m-wins">0</div><div class="metric-label">VINCENTI</div></div>
+      <div class="card metric"><div class="metric-icon">❌</div><div class="metric-value loss" id="m-losses">0</div><div class="metric-label">PERDENTI</div></div>
+      <div class="card metric"><div class="metric-icon">🎯</div><div class="metric-value" id="m-winrate">0%</div><div class="metric-label">WIN RATE</div></div>
+      <div class="card metric"><div class="metric-icon">🚀</div><div class="metric-value win" id="m-best">+0%</div><div class="metric-label">MIGLIOR TRADE</div></div>
+      <div class="card metric"><div class="metric-icon">💀</div><div class="metric-value loss" id="m-worst">0%</div><div class="metric-label">PEGGIOR TRADE</div></div>
+    </div>
+
+    <!-- Daily performance -->
+    <div class="card">
+      <h2>📊 Performance Giornaliera</h2>
+      <canvas id="dailyChart" height="70"></canvas>
+    </div>
+
+    <!-- Trades table -->
+    <div class="card">
+      <h2>📋 Ultimi Trade</h2>
+      <table class="trades">
+        <thead><tr><th>Symbol</th><th>Dir</th><th>Entry</th><th>🛑 SL</th><th>🎯 TP</th><th>Exit</th><th>PnL</th><th>%</th><th>Stato</th></tr></thead>
+        <tbody id="trades-body"><tr><td colspan="9" class="muted">Nessun trade ancora.</td></tr></tbody>
+      </table>
+    </div>
+
+  </div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
