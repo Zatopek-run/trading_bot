@@ -9,7 +9,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (Application, CallbackQueryHandler,
                            CommandHandler, ContextTypes)
 
-from config import TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, TRADE_QUANTITY, SPOT_ONLY
+from config import TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, TRADE_QUANTITY, SPOT_ONLY, AUTO_TRADE
 from strategy import Signal, Direction
 from trader import place_order, get_account_balance, place_market_order, avg_fill_price, place_oco_order
 from database import record_order, get_open_trades
@@ -52,6 +52,61 @@ async def send_signal(app: Application, signal: Signal) -> None:
         reply_markup=_make_keyboard(signal_id),
     )
     log.info("Signal sent to Telegram: %s %s", signal.symbol, signal.direction.value)
+
+
+async def execute_auto_trade(app: Application, signal: Signal) -> None:
+    """Esegue automaticamente un ordine e notifica su Telegram (usato quando AUTO_TRADE=true)."""
+    if SPOT_ONLY and signal.direction == Direction.SHORT:
+        await send_text(
+            app,
+            f"⚠️ *Auto-trade ignorato* — SHORT non disponibile in modalità Spot\n"
+            f"{signal.symbol} {signal.direction.value}",
+        )
+        return
+
+    log.info("AUTO_TRADE: placing order %s %s", signal.symbol, signal.direction.value)
+    try:
+        order = await place_order(signal)
+        fills = order.get("fills", [])
+        avg_px = (sum(float(f["price"]) * float(f["qty"]) for f in fills)
+                  / sum(float(f["qty"]) for f in fills)) if fills else signal.price
+        executed_qty = float(order.get("executedQty", TRADE_QUANTITY)) or TRADE_QUANTITY
+
+        trade = await record_order(
+            symbol=order["symbol"], side=order["side"], qty=executed_qty,
+            price=avg_px, order_id=order["orderId"], score=signal.score,
+        )
+
+        ledger = ""
+        if trade["action"] == "close":
+            emoji = "🟢" if trade["pnl"] >= 0 else "🔴"
+            ledger = f"\n{emoji} Trade chiuso — PnL: {trade['pnl']:+.2f} ({trade['pnl_pct']:+.2f}%)"
+        else:
+            sl = trade.get("sl_price", 0)
+            tp = trade.get("tp_price", 0)
+            ledger = (f"\n📌 Posizione {trade['direction']} aperta\n"
+                      f"🛑 SL: {sl:.4f}  🎯 TP: {tp:.4f}")
+            oco = await place_oco_order(
+                symbol=order["symbol"],
+                direction=trade["direction"],
+                qty=executed_qty,
+                entry_price=avg_px,
+            )
+            ledger += "\n✅ OCO impostato su Binance" if oco else "\n⚠️ OCO non impostato — SL/TP gestito dal VPS"
+
+        await send_text(
+            app,
+            f"🤖 *Trade automatico aperto*\n\n"
+            f"Symbol: `{order['symbol']}`\n"
+            f"Direzione: *{signal.direction.value}*\n"
+            f"Prezzo: `{avg_px:.4f}`\n"
+            f"Qty: `{executed_qty}`\n"
+            f"Score: {signal.score} confluenze"
+            f"{ledger}",
+        )
+    except Exception as exc:
+        log.exception("AUTO_TRADE order failed for %s", signal.symbol)
+        await send_text(app, f"🚨 *Errore auto-trade {signal.symbol}*\n`{exc}`")
 
 
 async def _handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

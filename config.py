@@ -15,6 +15,7 @@ MAX_OPEN_TRADES  = int(os.getenv("MAX_OPEN_TRADES", "3"))
 USE_TESTNET      = os.getenv("USE_TESTNET", "true").lower() == "true"
 
 SPOT_ONLY         = os.getenv("SPOT_ONLY", "false").lower() == "true"
+AUTO_TRADE        = os.getenv("AUTO_TRADE", "false").lower() == "true"
 USE_MARGIN        = os.getenv("USE_MARGIN", "true").lower() == "true"  # margin API per LONG e SHORT
 ENABLE_SL_TP      = os.getenv("ENABLE_SL_TP", "true").lower() == "true"
 STOP_LOSS_PCT     = float(os.getenv("STOP_LOSS_PCT", "2.0"))
@@ -33,7 +34,8 @@ TIMEFRAME         = "1h"
 CANDLES_LIMIT     = 100
 SCAN_INTERVAL_SEC = 60
 MONITOR_INTERVAL_SEC          = int(os.getenv("MONITOR_INTERVAL_SEC", "15"))
-POSITIONS_REPORT_INTERVAL_SEC = int(os.getenv("POSITIONS_REPORT_INTERVAL_SEC", "1800"))
+REPORT_INTERVAL_HOURS         = int(os.getenv("REPORT_INTERVAL_HOURS", "8"))
+POSITIONS_REPORT_INTERVAL_SEC = REPORT_INTERVAL_HOURS * 3600
 SYMBOLS_TO_SCAN   = ["BTCUSDC", "ETHUSDC", "BNBUSDC", "SOLUSDC", "ADAUSDC"]
 
 # ── Persistence / Dashboard ──────────────────────────────────────────────────

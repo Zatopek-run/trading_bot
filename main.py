@@ -11,10 +11,10 @@ from telegram.ext import Application
 from config import (SYMBOLS_TO_SCAN, SCAN_INTERVAL_SEC, MONITOR_INTERVAL_SEC,
                     TIMEFRAME, CANDLES_LIMIT, BENCHMARK_SYMBOL,
                     INITIAL_CAPITAL, ENABLE_SL_TP, MAX_OPEN_TRADES,
-                    POSITIONS_REPORT_INTERVAL_SEC)
+                    POSITIONS_REPORT_INTERVAL_SEC, AUTO_TRADE)
 from analyzer import fetch_all_symbols, fetch_ticker_price
 from strategy import analyze
-from telegram_bot import build_app, send_signal, send_text
+from telegram_bot import build_app, send_signal, send_text, execute_auto_trade
 from trader import place_market_order, avg_fill_price
 from database import (init_db, record_equity, realized_pnl,
                       record_order, get_open_trades, get_meta, set_meta,
@@ -153,7 +153,10 @@ async def scanner_loop(app: Application) -> None:
                 if sig:
                     found.append(f"{symbol}({sig.score})")
                     log.info("Signal: %s %s (score %d)", symbol, sig.direction.value, sig.score)
-                    await send_signal(app, sig)
+                    if AUTO_TRADE:
+                        await execute_auto_trade(app, sig)
+                    else:
+                        await send_signal(app, sig)
                     open_count += 1   # conta il segnale inviato come potenziale trade
             log.info("Scan #%d — %d simboli analizzati — aperti: %d/%d — segnali: %s",
                      scan_count, len(data), len(open_trades), MAX_OPEN_TRADES,
@@ -185,14 +188,12 @@ async def monitor_loop(app: Application) -> None:
 
 async def positions_report_loop(app: Application) -> None:
     """Invia automaticamente il report posizioni ogni POSITIONS_REPORT_INTERVAL_SEC."""
-    log.info("Report posizioni automatico ogni %ds", POSITIONS_REPORT_INTERVAL_SEC)
+    log.info("Report posizioni automatico ogni %dh", POSITIONS_REPORT_INTERVAL_SEC // 3600)
     await asyncio.sleep(POSITIONS_REPORT_INTERVAL_SEC)   # prima pausa prima del primo invio
     while True:
         try:
             trades = await get_open_trades()
-            if not trades:
-                await send_text(app, "📭 *Report automatico*\nNessuna posizione aperta.")
-            else:
+            if trades:
                 lines = [f"🕐 *Report automatico — {len(trades)} posizioni aperte*\n"]
                 total_pnl = 0.0
                 for t in trades:
