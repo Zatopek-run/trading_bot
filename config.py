@@ -17,9 +17,11 @@ USE_TESTNET      = os.getenv("USE_TESTNET", "true").lower() == "true"
 SPOT_ONLY         = os.getenv("SPOT_ONLY", "false").lower() == "true"
 AUTO_TRADE        = os.getenv("AUTO_TRADE", "false").lower() == "true"
 USE_MARGIN        = os.getenv("USE_MARGIN", "true").lower() == "true"  # margin API per LONG e SHORT
-ENABLE_SL_TP      = os.getenv("ENABLE_SL_TP", "true").lower() == "true"
-STOP_LOSS_PCT     = float(os.getenv("STOP_LOSS_PCT", "2.0"))
-TAKE_PROFIT_PCT   = float(os.getenv("TAKE_PROFIT_PCT", "4.0"))
+ENABLE_SL_TP         = os.getenv("ENABLE_SL_TP", "true").lower() == "true"
+STOP_LOSS_PCT        = float(os.getenv("STOP_LOSS_PCT", "2.0"))
+TAKE_PROFIT_PCT      = float(os.getenv("TAKE_PROFIT_PCT", "4.0"))
+ENABLE_TRAILING_STOP = os.getenv("ENABLE_TRAILING_STOP", "false").lower() == "true"
+TRAILING_STOP_PCT    = float(os.getenv("TRAILING_STOP_PCT", "1.5"))
 
 RSI_PERIOD        = int(os.getenv("RSI_PERIOD", "14"))
 RSI_OVERSOLD      = float(os.getenv("RSI_OVERSOLD", "30"))

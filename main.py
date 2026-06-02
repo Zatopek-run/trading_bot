@@ -11,14 +11,15 @@ from telegram.ext import Application
 from config import (SYMBOLS_TO_SCAN, SCAN_INTERVAL_SEC, MONITOR_INTERVAL_SEC,
                     TIMEFRAME, CANDLES_LIMIT, BENCHMARK_SYMBOL,
                     INITIAL_CAPITAL, ENABLE_SL_TP, MAX_OPEN_TRADES,
-                    POSITIONS_REPORT_INTERVAL_SEC, AUTO_TRADE)
+                    POSITIONS_REPORT_INTERVAL_SEC, AUTO_TRADE,
+                    ENABLE_TRAILING_STOP, TRAILING_STOP_PCT)
 from analyzer import fetch_all_symbols, fetch_ticker_price
 from strategy import analyze
 from telegram_bot import build_app, send_signal, send_text, execute_auto_trade
 from trader import place_market_order, avg_fill_price
 from database import (init_db, record_equity, realized_pnl,
                       record_order, get_open_trades, get_meta, set_meta,
-                      get_trades)
+                      get_trades, update_trailing_sl)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -86,6 +87,33 @@ async def monitor_positions(app: Application) -> None:
         except Exception:
             log.warning("Price fetch failed for %s during monitor", t["symbol"])
             continue
+
+        if ENABLE_TRAILING_STOP:
+            peak = t.get("peak_price") or t["entry_price"]
+            if t["direction"] == "LONG":
+                new_peak = max(peak, price)
+                new_trail_sl = new_peak * (1 - TRAILING_STOP_PCT / 100)
+                current_sl = t["sl_price"] or 0.0
+                new_sl = max(new_trail_sl, current_sl)
+                sl_improved = new_sl > current_sl
+            else:  # SHORT
+                new_peak = min(peak, price)
+                new_trail_sl = new_peak * (1 + TRAILING_STOP_PCT / 100)
+                current_sl = t["sl_price"] or float("inf")
+                new_sl = min(new_trail_sl, current_sl)
+                sl_improved = t["sl_price"] is None or new_sl < t["sl_price"]
+
+            if new_peak != peak or sl_improved:
+                await update_trailing_sl(t["id"], new_sl, new_peak)
+                t["sl_price"] = new_sl
+                if sl_improved:
+                    arrow = "📈" if t["direction"] == "LONG" else "📉"
+                    await send_text(
+                        app,
+                        f"{arrow} *Trailing SL aggiornato*\n"
+                        f"{t['symbol']} {t['direction']}\n"
+                        f"  Nuovo SL: `{new_sl:.4f}`  (peak: `{new_peak:.4f}`)",
+                    )
 
         sl, tp = t["sl_price"], t["tp_price"]
         if sl is None or tp is None:

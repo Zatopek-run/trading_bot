@@ -9,7 +9,7 @@ import logging
 import aiosqlite
 from datetime import datetime, timezone
 from config import (DB_PATH, INITIAL_CAPITAL, GOAL_CAPITAL, EXPERIMENT_DAYS,
-                    STOP_LOSS_PCT, TAKE_PROFIT_PCT)
+                    STOP_LOSS_PCT, TAKE_PROFIT_PCT, TRAILING_STOP_PCT)
 
 log = logging.getLogger(__name__)
 
@@ -43,6 +43,7 @@ async def init_db() -> None:
             pnl_pct       REAL    DEFAULT 0,
             sl_price      REAL,
             tp_price      REAL,
+            peak_price    REAL,
             close_reason  TEXT
         );
 
@@ -64,7 +65,7 @@ async def init_db() -> None:
         async with db.execute("PRAGMA table_info(trades)") as cur:
             cols = {row[1] for row in await cur.fetchall()}
         for col, ddl in (("sl_price", "REAL"), ("tp_price", "REAL"),
-                         ("close_reason", "TEXT")):
+                         ("peak_price", "REAL"), ("close_reason", "TEXT")):
             if col not in cols:
                 await db.execute(f"ALTER TABLE trades ADD COLUMN {col} {ddl}")
         await db.commit()
@@ -142,8 +143,8 @@ async def record_order(symbol: str, side: str, qty: float, price: float,
             sl, tp = _sl_tp(direction, price)
             return db.execute(
                 "INSERT INTO trades(symbol,direction,qty,entry_price,entry_ts,"
-                "status,sl_price,tp_price) VALUES(?,?,?,?,?, 'open',?,?)",
-                (symbol, direction, qty, price, now, sl, tp),
+                "status,sl_price,tp_price,peak_price) VALUES(?,?,?,?,?, 'open',?,?,?)",
+                (symbol, direction, qty, price, now, sl, tp, price),
             )
 
         if open_trade is None:
@@ -196,6 +197,15 @@ async def realized_pnl() -> float:
         ) as cur:
             row = await cur.fetchone()
     return float(row[0] or 0)
+
+
+async def update_trailing_sl(trade_id: int, new_sl: float, new_peak: float) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE trades SET sl_price=?, peak_price=? WHERE id=?",
+            (new_sl, new_peak, trade_id),
+        )
+        await db.commit()
 
 
 # ── Dashboard read queries ───────────────────────────────────────────────────
@@ -270,7 +280,7 @@ async def get_open_trades() -> list[dict]:
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
-            "SELECT id,symbol,direction,qty,entry_price,sl_price,tp_price "
+            "SELECT id,symbol,direction,qty,entry_price,sl_price,tp_price,peak_price "
             "FROM trades WHERE status='open'"
         ) as cur:
             rows = await cur.fetchall()
