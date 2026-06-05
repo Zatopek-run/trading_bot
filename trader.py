@@ -13,7 +13,7 @@ from urllib.parse import urlencode
 
 from config import (BINANCE_API_KEY, BINANCE_API_SECRET,
                     TRADE_AMOUNT_USDC, USE_TESTNET, USE_MARGIN,
-                    STOP_LOSS_PCT, TAKE_PROFIT_PCT)
+                    STOP_LOSS_PCT, TAKE_PROFIT_PCT, ENABLE_OCO)
 from strategy import Signal, Direction
 
 log = logging.getLogger(__name__)
@@ -173,6 +173,9 @@ async def place_oco_order(symbol: str, direction: str,
     """
     if not USE_MARGIN:
         log.info("OCO non disponibile in modalità Spot — usa solo VPS monitor")
+        return None
+    if not ENABLE_OCO:
+        log.info("OCO disabilitato (ENABLE_OCO=false)")
         return None
 
     async with aiohttp.ClientSession() as session:

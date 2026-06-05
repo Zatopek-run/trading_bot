@@ -53,3 +53,4 @@ DASHBOARD_USER     = os.getenv("DASHBOARD_USER", "admin")
 DASHBOARD_PASSWORD = os.getenv("DASHBOARD_PASSWORD", "changeme")
 DASHBOARD_SECRET   = os.getenv("DASHBOARD_SECRET", "please-change-this-secret")
 DASHBOARD_PORT     = int(os.getenv("DASHBOARD_PORT", "8000"))
+ENABLE_OCO = os.getenv("ENABLE_OCO", "true").lower() == "true"
