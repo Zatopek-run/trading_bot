@@ -11,7 +11,7 @@ from telegram.ext import (Application, CallbackQueryHandler,
 
 from config import TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, TRADE_QUANTITY, SPOT_ONLY, AUTO_TRADE
 from strategy import Signal, Direction
-from trader import place_order, get_account_balance, place_market_order, avg_fill_price, place_oco_order
+from trader import place_order, get_account_balance, place_market_order, avg_fill_price, place_oco_order, cancel_open_orders
 from database import record_order, get_open_trades
 from analyzer import fetch_ticker_price
 
@@ -79,6 +79,12 @@ async def execute_auto_trade(app: Application, signal: Signal) -> None:
 
         ledger = ""
         if trade["action"] == "close":
+            # Il market order ha chiuso una posizione esistente: cancella l'OCO
+            # pendente sul simbolo per evitare che riapra una posizione.
+            try:
+                await cancel_open_orders(order["symbol"])
+            except Exception:
+                log.exception("cancel_open_orders failed for %s", order["symbol"])
             emoji = "🟢" if trade["pnl"] >= 0 else "🔴"
             ledger = f"\n{emoji} Trade chiuso — PnL: {trade['pnl']:+.2f} ({trade['pnl_pct']:+.2f}%)"
         else:
@@ -161,6 +167,12 @@ async def _handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         )
         ledger = ""
         if trade["action"] == "close":
+            # Il market order ha chiuso una posizione esistente: cancella l'OCO
+            # pendente sul simbolo per evitare che riapra una posizione.
+            try:
+                await cancel_open_orders(order["symbol"])
+            except Exception:
+                log.exception("cancel_open_orders failed for %s", order["symbol"])
             emoji = "🟢" if trade["pnl"] >= 0 else "🔴"
             ledger = f"\n{emoji} Trade chiuso — PnL: {trade['pnl']:+.2f} ({trade['pnl_pct']:+.2f}%)"
         else:
@@ -319,6 +331,12 @@ async def _handle_closeall(query, action: str) -> None:
         try:
             order   = await place_market_order(t["symbol"], close_side, t["qty"])
             fill_px = avg_fill_price(order, t["entry_price"])
+            # Chiusura via market order: cancella l'OCO pendente sul simbolo
+            # per evitare che esegua aprendo una posizione non voluta.
+            try:
+                await cancel_open_orders(t["symbol"])
+            except Exception:
+                log.exception("cancel_open_orders failed for %s", t["symbol"])
             closed  = await record_order(
                 symbol=t["symbol"], side=close_side, qty=t["qty"],
                 price=fill_px, order_id=order["orderId"], score=0,

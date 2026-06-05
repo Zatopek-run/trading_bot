@@ -210,7 +210,7 @@ async def place_oco_order(symbol: str, direction: str,
         log.info("OCO %s %s: TP=%.4f SL_stop=%.4f SL_limit=%.4f qty=%.6f",
                  close_side, symbol, tp_price, sl_stop, sl_limit, qty)
 
-        async with session.post(f"{BASE_URL}/sapi/v1/margin/oco",
+        async with session.post(f"{BASE_URL}/sapi/v1/margin/order/oco",
                                 params=params, headers=headers,
                                 timeout=aiohttp.ClientTimeout(total=10)) as resp:
             data = await resp.json()
@@ -218,6 +218,43 @@ async def place_oco_order(symbol: str, direction: str,
                 log.error("OCO error %s: %s", resp.status, data)
                 return None     # OCO fallito → VPS monitor fa da backup
             log.info("OCO placed: listOrderId=%s", data.get("orderListId"))
+            return data
+
+
+async def cancel_open_orders(symbol: str) -> dict | None:
+    """
+    Cancella TUTTI gli ordini aperti su un simbolo sul conto Cross Margin.
+
+    Serve quando il bot chiude una posizione via market order (es. trailing
+    stop): l'OCO originale resta pendente su Binance e potrebbe eseguire
+    aprendo una posizione non voluta. Cancellando gli open orders del simbolo
+    si evita questo rischio.
+
+    Usa DELETE /sapi/v1/margin/openOrders (symbol + timestamp + signature).
+    Ritorna la lista degli ordini cancellati, o None se non applicabile/errore.
+    """
+    if not USE_MARGIN:
+        return None
+
+    async with aiohttp.ClientSession() as session:
+        params = {
+            "symbol":    symbol,
+            "timestamp": int(time.time() * 1000),
+        }
+        params["signature"] = _sign(params)
+        headers = {"X-MBX-APIKEY": BINANCE_API_KEY}
+
+        log.info("Cancelling open margin orders for %s", symbol)
+
+        async with session.delete(f"{BASE_URL}/sapi/v1/margin/openOrders",
+                                  params=params, headers=headers,
+                                  timeout=aiohttp.ClientTimeout(total=10)) as resp:
+            data = await resp.json()
+            if resp.status != 200:
+                log.error("Cancel open orders error %s: %s", resp.status, data)
+                return None
+            log.info("Cancelled %d open order(s) for %s",
+                     len(data) if isinstance(data, list) else 0, symbol)
             return data
 
 

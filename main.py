@@ -5,18 +5,21 @@ import asyncio
 import logging
 import signal as os_signal
 import sys
+import time
 
+import aiosqlite
 from telegram.ext import Application
 
 from config import (SYMBOLS_TO_SCAN, SCAN_INTERVAL_SEC, MONITOR_INTERVAL_SEC,
                     TIMEFRAME, CANDLES_LIMIT, BENCHMARK_SYMBOL,
                     INITIAL_CAPITAL, ENABLE_SL_TP, MAX_OPEN_TRADES,
-                    POSITIONS_REPORT_INTERVAL_SEC, AUTO_TRADE,
+                    POSITIONS_REPORT_INTERVAL_SEC, AUTO_TRADE, REGIME_FILTER,
+                    TRADE_AMOUNT_USDC, STOP_LOSS_PCT, TAKE_PROFIT_PCT, DB_PATH,
                     ENABLE_TRAILING_STOP, TRAILING_STOP_PCT, TRAILING_ACTIVATION_PCT)
 from analyzer import fetch_all_symbols, fetch_ticker_price
-from strategy import analyze
+from strategy import analyze, Direction
 from telegram_bot import build_app, send_signal, send_text, execute_auto_trade
-from trader import place_market_order, avg_fill_price
+from trader import place_market_order, avg_fill_price, cancel_open_orders
 from database import (init_db, record_equity, realized_pnl,
                       record_order, get_open_trades, get_meta, set_meta,
                       get_trades, update_trailing_sl)
@@ -197,6 +200,14 @@ async def monitor_positions(app: Application) -> None:
         try:
             order = await place_market_order(t["symbol"], close_side, t["qty"])
             fill_px = avg_fill_price(order, price)
+            # La posizione è stata chiusa con un market order (es. trailing stop):
+            # l'OCO originale resta pendente su Binance e potrebbe eseguire
+            # aprendo una posizione non voluta. Cancelliamo gli ordini pendenti
+            # sul simbolo prima di registrare la chiusura.
+            try:
+                await cancel_open_orders(t["symbol"])
+            except Exception:
+                log.exception("cancel_open_orders failed for %s", t["symbol"])
             closed = await record_order(
                 symbol=t["symbol"], side=close_side, qty=t["qty"],
                 price=fill_px, order_id=order["orderId"], score=0,
@@ -214,6 +225,41 @@ async def monitor_positions(app: Application) -> None:
         except Exception as exc:
             log.exception("Auto-close failed for %s", t["symbol"])
             await send_text(app, f"🚨 Errore chiusura automatica {t['symbol']}: `{exc}`")
+
+
+def _btc_below_ema50(data: dict) -> bool:
+    """Regime check: True se BTC chiude sotto la sua EMA50 (mercato ribassista).
+
+    Usa i dati già scaricati nel loop; ritorna False se BTC manca o ha
+    troppo poche candele per una EMA50 sensata.
+    """
+    df = data.get(BENCHMARK_SYMBOL)
+    if df is None or len(df) < 50:
+        return False
+    ema50 = df["close"].ewm(span=50, adjust=False).mean()
+    return float(df["close"].iloc[-1]) < float(ema50.iloc[-1])
+
+
+async def _record_simulated(sig) -> tuple[float, float]:
+    """Inserisce un LONG simulato (paper trading) in 'trades' senza eseguire l'ordine.
+
+    Ritorna (sl_price, tp_price) per la notifica. status='simulated',
+    close_reason=None; SL/TP calcolati come per un trade reale.
+    """
+    entry = sig.price
+    qty   = TRADE_AMOUNT_USDC / entry if entry else 0.0
+    sl    = entry * (1 - STOP_LOSS_PCT / 100)
+    tp    = entry * (1 + TAKE_PROFIT_PCT / 100)
+    now   = time.time()
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT INTO trades(symbol,direction,qty,entry_price,entry_ts,"
+            "status,sl_price,tp_price,peak_price,close_reason) "
+            "VALUES(?,?,?,?,?, 'simulated',?,?,?,NULL)",
+            (sig.symbol, "LONG", qty, entry, now, sl, tp, entry),
+        )
+        await db.commit()
+    return sl, tp
 
 
 async def scanner_loop(app: Application) -> None:
@@ -242,13 +288,25 @@ async def scanner_loop(app: Application) -> None:
                 if sig:
                     found.append(f"{symbol}({sig.score})")
                     log.info("Signal: %s %s (score %d)", symbol, sig.direction.value, sig.score)
-                    if AUTO_TRADE:
+                    if (REGIME_FILTER and sig.direction == Direction.LONG
+                            and _btc_below_ema50(data)):
+                        # Regime ribassista: niente ordine reale, solo paper trading.
+                        sl, tp = await _record_simulated(sig)
+                        await send_text(
+                            app,
+                            f"📊 LONG simulato (regime ribassista)\n"
+                            f"{sig.symbol} entry: {sig.price}\n"
+                            f"SL: {sl} TP: {tp}"
+                        )
+                        log.info("LONG simulato (regime ribassista): %s", symbol)
+                    elif AUTO_TRADE:
                         await execute_auto_trade(app, sig)
                     else:
                         await send_signal(app, sig)
                     open_count += 1   # conta il segnale inviato come potenziale trade
-            log.info("Scan #%d — %d simboli analizzati — aperti: %d/%d — segnali: %s",
-                     scan_count, len(data), len(open_trades), MAX_OPEN_TRADES,
+            regime = "BEARISH" if _btc_below_ema50(data) else "BULLISH"
+            log.info("Scan #%d — regime: %s — %d simboli analizzati — aperti: %d/%d — segnali: %s",
+                     scan_count, regime, len(data), len(open_trades), MAX_OPEN_TRADES,
                      ", ".join(found) if found else "nessuno")
             await _snapshot_equity()
         except asyncio.CancelledError:

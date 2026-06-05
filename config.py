@@ -16,6 +16,7 @@ USE_TESTNET      = os.getenv("USE_TESTNET", "true").lower() == "true"
 
 SPOT_ONLY         = os.getenv("SPOT_ONLY", "false").lower() == "true"
 AUTO_TRADE        = os.getenv("AUTO_TRADE", "false").lower() == "true"
+REGIME_FILTER     = os.getenv("REGIME_FILTER", "true").lower() == "true"  # LONG simulato se BTC < EMA50
 USE_MARGIN        = os.getenv("USE_MARGIN", "true").lower() == "true"  # margin API per LONG e SHORT
 ENABLE_SL_TP         = os.getenv("ENABLE_SL_TP", "true").lower() == "true"
 STOP_LOSS_PCT        = float(os.getenv("STOP_LOSS_PCT", "2.0"))
@@ -39,7 +40,7 @@ SCAN_INTERVAL_SEC = 60
 MONITOR_INTERVAL_SEC          = int(os.getenv("MONITOR_INTERVAL_SEC", "15"))
 REPORT_INTERVAL_HOURS         = int(os.getenv("REPORT_INTERVAL_HOURS", "8"))
 POSITIONS_REPORT_INTERVAL_SEC = REPORT_INTERVAL_HOURS * 3600
-SYMBOLS_TO_SCAN   = ["BTCUSDC", "ETHUSDC", "BNBUSDC", "SOLUSDC", "ADAUSDC"]
+SYMBOLS_TO_SCAN = ["BTCUSDC", "ETHUSDC", "BNBUSDC", "SOLUSDC", "ADAUSDC", "SUIUSDC", "DOGEUSDC"]
 
 # ── Persistence / Dashboard ──────────────────────────────────────────────────
 DB_PATH          = os.getenv("DB_PATH", "data/trading.db")
