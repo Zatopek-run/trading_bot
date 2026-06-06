@@ -240,23 +240,36 @@ def _btc_below_ema50(data: dict) -> bool:
     return float(df["close"].iloc[-1]) < float(ema50.iloc[-1])
 
 
-async def _record_simulated(sig) -> tuple[float, float]:
-    """Inserisce un LONG simulato (paper trading) in 'trades' senza eseguire l'ordine.
+def _btc_above_ema50(data: dict) -> bool:
+    """Regime check: True se BTC chiude sopra la sua EMA50 (mercato rialzista)."""
+    df = data.get(BENCHMARK_SYMBOL)
+    if df is None or len(df) < 50:
+        return False
+    ema50 = df["close"].ewm(span=50, adjust=False).mean()
+    return float(df["close"].iloc[-1]) > float(ema50.iloc[-1])
+
+
+async def _record_simulated(sig, direction: str = "LONG") -> tuple[float, float]:
+    """Inserisce un trade simulato (paper trading) in 'trades' senza eseguire l'ordine.
 
     Ritorna (sl_price, tp_price) per la notifica. status='simulated',
     close_reason=None; SL/TP calcolati come per un trade reale.
     """
     entry = sig.price
     qty   = TRADE_AMOUNT_USDC / entry if entry else 0.0
-    sl    = entry * (1 - STOP_LOSS_PCT / 100)
-    tp    = entry * (1 + TAKE_PROFIT_PCT / 100)
+    if direction == "SHORT":
+        sl = entry * (1 + STOP_LOSS_PCT / 100)
+        tp = entry * (1 - TAKE_PROFIT_PCT / 100)
+    else:
+        sl = entry * (1 - STOP_LOSS_PCT / 100)
+        tp = entry * (1 + TAKE_PROFIT_PCT / 100)
     now   = time.time()
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             "INSERT INTO trades(symbol,direction,qty,entry_price,entry_ts,"
             "status,sl_price,tp_price,peak_price,close_reason) "
             "VALUES(?,?,?,?,?, 'simulated',?,?,?,NULL)",
-            (sig.symbol, "LONG", qty, entry, now, sl, tp, entry),
+            (sig.symbol, direction, qty, entry, now, sl, tp, entry),
         )
         await db.commit()
     return sl, tp
@@ -291,7 +304,7 @@ async def scanner_loop(app: Application) -> None:
                     if (REGIME_FILTER and sig.direction == Direction.LONG
                             and _btc_below_ema50(data)):
                         # Regime ribassista: niente ordine reale, solo paper trading.
-                        sl, tp = await _record_simulated(sig)
+                        sl, tp = await _record_simulated(sig, "LONG")
                         await send_text(
                             app,
                             f"📊 LONG simulato (regime ribassista)\n"
@@ -299,6 +312,17 @@ async def scanner_loop(app: Application) -> None:
                             f"SL: {sl} TP: {tp}"
                         )
                         log.info("LONG simulato (regime ribassista): %s", symbol)
+                    elif (REGIME_FILTER and sig.direction == Direction.SHORT
+                            and _btc_above_ema50(data)):
+                        # Regime rialzista: niente ordine SHORT reale, solo paper trading.
+                        sl, tp = await _record_simulated(sig, "SHORT")
+                        await send_text(
+                            app,
+                            f"📊 SHORT simulato (regime rialzista)\n"
+                            f"{sig.symbol} entry: {sig.price}\n"
+                            f"SL: {sl} TP: {tp}"
+                        )
+                        log.info("SHORT simulato (regime rialzista): %s", symbol)
                     elif AUTO_TRADE:
                         await execute_auto_trade(app, sig)
                     else:
