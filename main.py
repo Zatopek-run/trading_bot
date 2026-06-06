@@ -10,6 +10,7 @@ import time
 import aiosqlite
 from telegram.ext import Application
 
+import config
 from config import (SYMBOLS_TO_SCAN, SCAN_INTERVAL_SEC, MONITOR_INTERVAL_SEC,
                     TIMEFRAME, CANDLES_LIMIT, BENCHMARK_SYMBOL,
                     INITIAL_CAPITAL, ENABLE_SL_TP, MAX_OPEN_TRADES,
@@ -275,6 +276,42 @@ async def _record_simulated(sig, direction: str = "LONG") -> tuple[float, float]
     return sl, tp
 
 
+async def _update_trade_size_if_needed(app: Application) -> None:
+    """Ricalibra TRADE_AMOUNT_USDC se il capitale si è mosso di >=10%."""
+    global TRADE_AMOUNT_USDC
+    try:
+        capitale = INITIAL_CAPITAL + await realized_pnl()
+        last_str = await get_meta("last_size_capital")
+
+        if last_str is None:
+            # Prima esecuzione: inizializza e applica subito la size corretta.
+            await set_meta("last_size_capital", str(capitale))
+            last_str = str(capitale)
+            diff_pct = 100.0  # forza l'aggiornamento al primo avvio
+        else:
+            last_capitale = float(last_str)
+            diff_pct = (abs(capitale - last_capitale) / last_capitale * 100
+                        if last_capitale else 100.0)
+
+        if diff_pct >= 10:
+            vecchia_size = TRADE_AMOUNT_USDC
+            nuova_size   = int((capitale * 0.90) / MAX_OPEN_TRADES)
+            config.TRADE_AMOUNT_USDC = nuova_size
+            TRADE_AMOUNT_USDC        = nuova_size
+            await set_meta("last_size_capital", str(capitale))
+            await send_text(
+                app,
+                f"📐 Trade size aggiornato\n"
+                f"Capitale: {capitale:.2f} USDC\n"
+                f"Nuova size: {nuova_size} USDC\n"
+                f"(era {vecchia_size} USDC)"
+            )
+            log.info("Trade size aggiornato: %d → %d USDC (capitale: %.2f)",
+                     vecchia_size, nuova_size, capitale)
+    except Exception:
+        log.exception("_update_trade_size_if_needed failed")
+
+
 async def scanner_loop(app: Application) -> None:
     """Continuously scans all symbols and fires signals when strategy triggers."""
     log.info("Scanner started — watching %s on %s", SYMBOLS_TO_SCAN, TIMEFRAME)
@@ -282,6 +319,7 @@ async def scanner_loop(app: Application) -> None:
     while True:
         try:
             scan_count += 1
+            await _update_trade_size_if_needed(app)
             open_trades = await get_open_trades()
             open_count  = len(open_trades)
             open_symbols = {t["symbol"] for t in open_trades}

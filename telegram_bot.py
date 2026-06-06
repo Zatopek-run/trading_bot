@@ -9,10 +9,12 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (Application, CallbackQueryHandler,
                            CommandHandler, ContextTypes)
 
-from config import TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, TRADE_QUANTITY, SPOT_ONLY, AUTO_TRADE
+import config
+from config import (TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, TRADE_QUANTITY, SPOT_ONLY, AUTO_TRADE,
+                    INITIAL_CAPITAL, MAX_OPEN_TRADES)
 from strategy import Signal, Direction
 from trader import place_order, get_account_balance, place_market_order, avg_fill_price, place_oco_order, cancel_open_orders
-from database import record_order, get_open_trades
+from database import record_order, get_open_trades, realized_pnl
 from analyzer import fetch_ticker_price
 
 log = logging.getLogger(__name__)
@@ -363,6 +365,23 @@ async def _handle_closeall(query, action: str) -> None:
     )
 
 
+async def _cmd_limit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    try:
+        capitale = INITIAL_CAPITAL + await realized_pnl()
+        size     = config.TRADE_AMOUNT_USDC
+        esposizione = size * MAX_OPEN_TRADES
+        pct = esposizione / capitale * 100 if capitale else 0.0
+        await update.message.reply_text(
+            f"📐 *Trade size attuale:* `{size} USDC`\n"
+            f"Capitale stimato: `{capitale:.2f} USDC`\n"
+            f"Esposizione max: `{esposizione} USDC`\n"
+            f"({pct:.1f}% del capitale)",
+            parse_mode="Markdown",
+        )
+    except Exception as exc:
+        await update.message.reply_text(f"Errore: {exc}")
+
+
 def build_app() -> Application:
     app = (Application.builder()
            .token(TELEGRAM_TOKEN)
@@ -372,5 +391,6 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("status",    _cmd_status))
     app.add_handler(CommandHandler("positions", _cmd_positions))
     app.add_handler(CommandHandler("closeall",  _cmd_closeall))
+    app.add_handler(CommandHandler("limit",     _cmd_limit))
     app.add_handler(CallbackQueryHandler(_handle_callback))
     return app
